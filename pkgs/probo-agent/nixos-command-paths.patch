@@ -1,0 +1,45 @@
+diff --git a/pkg/deviceagent/checks/checks_linux.go b/pkg/deviceagent/checks/checks_linux.go
+index 77c9ba85..8cde0249 100644
+--- a/pkg/deviceagent/checks/checks_linux.go
++++ b/pkg/deviceagent/checks/checks_linux.go
+@@ -855,6 +855,16 @@ func linuxAutoUpdate(ctx context.Context) Result {
+ 		return fail(ev)
+ 	}
+ 
++	if _, err := os.Stat("/etc/NIXOS"); err == nil && CommandExists("systemctl") {
++		out := RunCommand(ctx, "systemctl", "is-enabled", "nixos-upgrade.timer")
++		ev := map[string]any{"backend": "nixos-upgrade", "state": out.Stdout}
++		if strings.TrimSpace(out.Stdout) == "enabled" {
++			return pass(ev)
++		}
++
++		return fail(ev)
++	}
++
+ 	if CommandExists("systemctl") {
+ 		out := RunCommand(ctx, "systemctl", "is-enabled", "dnf-automatic.timer")
+ 		if out.Err == nil {
+diff --git a/pkg/deviceagent/checks/runcmd_paths_linux.go b/pkg/deviceagent/checks/runcmd_paths_linux.go
+index b6ae4c8a..49f99bf2 100644
+--- a/pkg/deviceagent/checks/runcmd_paths_linux.go
++++ b/pkg/deviceagent/checks/runcmd_paths_linux.go
+@@ -31,6 +31,18 @@ var linuxCommandPaths = map[string][]string{
+ 	"ufw":          {"/usr/sbin/ufw", "/sbin/ufw"},
+ }
+ 
++// nixosCommandDirs are the root-owned NixOS profile directories in which
++// system commands live; NixOS has no /usr/bin or /sbin.
++var nixosCommandDirs = []string{
++	"/run/wrappers/bin",
++	"/run/current-system/sw/bin",
++}
++
+ func commandCandidates(cmd string) []string {
+-	return linuxCommandPaths[cmd]
++	candidates := append([]string{}, linuxCommandPaths[cmd]...)
++	for _, dir := range nixosCommandDirs {
++		candidates = append(candidates, dir+"/"+cmd)
++	}
++
++	return candidates
+ }
