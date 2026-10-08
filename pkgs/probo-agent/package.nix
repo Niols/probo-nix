@@ -27,6 +27,9 @@
     # Recognise `system.autoUpgrade` (nixos-upgrade.timer) as an auto-update
     # mechanism; upstream only knows unattended-upgrades and dnf-automatic.
     ./nixos-auto-upgrade.patch
+    # The agent replaces its own binary from GitHub Releases, which cannot
+    # work from the read-only Nix store. Updates come from Nix instead.
+    ./disable-self-update.patch
   ];
 
   subPackages = [

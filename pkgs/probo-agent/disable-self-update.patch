@@ -1,0 +1,26 @@
+diff --git a/cmd/probo-agent/main.go b/cmd/probo-agent/main.go
+index 0306845b..fb3ef7a8 100644
+--- a/cmd/probo-agent/main.go
++++ b/cmd/probo-agent/main.go
+@@ -254,6 +254,12 @@ func reportIfAlreadyEnrolled(dir string) (bool, error) {
+ // dir is the agent state directory, used to host the Sigstore TUF
+ // metadata cache for cosign bundle verification.
+ func newUpdater(logger *log.Logger, dir string, allowPrereleases bool) *update.Updater {
++	// Nix: the binary lives in the read-only Nix store and is updated
++	// through Nix, so in-place self-update is disabled.
++	if true {
++		return nil
++	}
++
+ 	exePath, err := os.Executable()
+ 	if err != nil || exePath == "" {
+ 		return nil
+@@ -666,7 +672,7 @@ func newUpdateCmd() *cobra.Command {
+ 
+ 			updater := newUpdater(logger, dir, cfg.AllowPrereleases)
+ 			if updater == nil {
+-				return errors.New("cannot resolve current executable path")
++				return errors.New("self-update is disabled in this build; update probo-agent through Nix")
+ 			}
+ 
+ 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Minute)

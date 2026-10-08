@@ -71,6 +71,9 @@ own commit, marked `[HACK]`.
 - `nixos-auto-upgrade.patch`: the auto-update check only knows Debian's
   unattended-upgrades and Fedora's dnf-automatic. With the patch, on NixOS it
   passes when `system.autoUpgrade` is enabled (`nixos-upgrade.timer`).
+- `disable-self-update.patch`: the agent normally replaces its own binary from
+  GitHub Releases. That cannot work from the Nix store, so it is disabled.
+  Update the agent by updating this flake.
 
 ## Development
 

@@ -105,7 +105,8 @@ in
         ExecStart = "${lib.getExe cfg.package} run --dir ${stateDir}";
         Restart = "always";
         RestartSec = 10;
-        # 75 is the exit code emitted after a successful self-update.
+        # 75 is the exit code emitted after a successful self-update. The Nix
+        # build disables self-update, but keep this in line with upstream.
         SuccessExitStatus = 75;
         User = "root";
         NoNewPrivileges = true;

@@ -118,6 +118,9 @@ in
         )
         assert paths().count("/api/agent/v1/enroll") == 1, paths()
 
+    with subtest("self-update is disabled"):
+        machine.fail("probo-agent update --check")
+
     with subtest("uninstall revokes the device server-side"):
         # The running agent would recreate its state; stop it first.
         machine.systemctl("stop probo-agent.service")
