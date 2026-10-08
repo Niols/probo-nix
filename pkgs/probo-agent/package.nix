@@ -19,6 +19,13 @@
 
   vendorHash = "sha256-DTjaYK8Tb8Zju6hc9jKpyTgayrTOam/c0YOim9aRROQ=";
 
+  # [HACK] Patches changing the agent's behaviour, one commit each.
+  patches = [
+    # Also look up the commands run by the posture checks in the NixOS
+    # system profile; upstream only tries FHS paths like /usr/bin/systemctl.
+    ./nixos-command-paths.patch
+  ];
+
   subPackages = [
     "cmd/probo-agent"
     # Library packages: nothing gets installed, but their tests are run.

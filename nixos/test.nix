@@ -101,6 +101,12 @@ in
         postures = [r for r in requests() if r["path"] == "/api/agent/v1/postures"][0]
         results = {p["check_key"]: p for p in postures["body"]["results"]}
         print(json.dumps(results, indent=2))
+        # These need commands that only exist in the NixOS system profile.
+        for key in ["TIME_SYNC", "REMOTE_LOGIN", "MALWARE_PROTECTION"]:
+            evidence = json.dumps(results[key].get("evidence"))
+            assert "not available at expected absolute path" not in evidence, (key, evidence)
+            assert "unavailable" not in evidence, (key, evidence)
+        assert "lsblk" in results["DISK_ENCRYPTION"]["evidence"], results["DISK_ENCRYPTION"]
 
     with subtest("restart reuses the stored credentials"):
         machine.succeed("rm /etc/probo-enrollment-token")

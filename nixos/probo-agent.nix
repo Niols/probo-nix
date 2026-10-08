@@ -69,6 +69,13 @@ in
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
+      # The posture checks look up commands in the NixOS system profile
+      # directly; this is for the commands they run through `runuser`/`sudo`.
+      path = [
+        "/run/wrappers"
+        "/run/current-system/sw"
+      ];
+
       preStart = ''
         if [ -e ${stateDir}/config.json ]; then
           exit 0

@@ -59,6 +59,16 @@ To unenroll, stop the service (`systemctl stop probo-agent`), run
 `probo-agent uninstall`, then disable the module. If the service keeps running,
 it recreates its state.
 
+## Differences from upstream
+
+The following patches change the behaviour of the agent. Each was added in its
+own commit, marked `[HACK]`.
+
+- `nixos-command-paths.patch`: the posture checks only run commands from
+  hard-coded FHS paths (`/usr/bin/systemctl`, `/usr/bin/lsblk`, …), and none of
+  those paths exist on NixOS. With the patch, the checks also look in
+  `/run/wrappers/bin` and `/run/current-system/sw/bin`.
+
 ## Development
 
 ```sh

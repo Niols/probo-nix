@@ -1,0 +1,24 @@
+diff --git a/pkg/deviceagent/checks/runcmd_paths_linux.go b/pkg/deviceagent/checks/runcmd_paths_linux.go
+index b6ae4c8a..49f99bf2 100644
+--- a/pkg/deviceagent/checks/runcmd_paths_linux.go
++++ b/pkg/deviceagent/checks/runcmd_paths_linux.go
+@@ -31,6 +31,18 @@ var linuxCommandPaths = map[string][]string{
+ 	"ufw":          {"/usr/sbin/ufw", "/sbin/ufw"},
+ }
+ 
++// nixosCommandDirs are the root-owned NixOS profile directories in which
++// system commands live; NixOS has no /usr/bin or /sbin.
++var nixosCommandDirs = []string{
++	"/run/wrappers/bin",
++	"/run/current-system/sw/bin",
++}
++
+ func commandCandidates(cmd string) []string {
+-	return linuxCommandPaths[cmd]
++	candidates := append([]string{}, linuxCommandPaths[cmd]...)
++	for _, dir := range nixosCommandDirs {
++		candidates = append(candidates, dir+"/"+cmd)
++	}
++
++	return candidates
+ }
