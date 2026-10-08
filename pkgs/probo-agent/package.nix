@@ -24,6 +24,9 @@
     # Also look up the commands run by the posture checks in the NixOS
     # system profile; upstream only tries FHS paths like /usr/bin/systemctl.
     ./nixos-command-paths.patch
+    # Recognise `system.autoUpgrade` (nixos-upgrade.timer) as an auto-update
+    # mechanism; upstream only knows unattended-upgrades and dnf-automatic.
+    ./nixos-auto-upgrade.patch
   ];
 
   subPackages = [

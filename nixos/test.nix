@@ -107,6 +107,7 @@ in
             assert "not available at expected absolute path" not in evidence, (key, evidence)
             assert "unavailable" not in evidence, (key, evidence)
         assert "lsblk" in results["DISK_ENCRYPTION"]["evidence"], results["DISK_ENCRYPTION"]
+        assert results["AUTO_UPDATE"]["evidence"]["backend"] == "nixos-upgrade", results["AUTO_UPDATE"]
 
     with subtest("restart reuses the stored credentials"):
         machine.succeed("rm /etc/probo-enrollment-token")

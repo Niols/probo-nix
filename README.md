@@ -68,6 +68,9 @@ own commit, marked `[HACK]`.
   hard-coded FHS paths (`/usr/bin/systemctl`, `/usr/bin/lsblk`, …), and none of
   those paths exist on NixOS. With the patch, the checks also look in
   `/run/wrappers/bin` and `/run/current-system/sw/bin`.
+- `nixos-auto-upgrade.patch`: the auto-update check only knows Debian's
+  unattended-upgrades and Fedora's dnf-automatic. With the patch, on NixOS it
+  passes when `system.autoUpgrade` is enabled (`nixos-upgrade.timer`).
 
 ## Development
 
