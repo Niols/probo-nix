@@ -30,6 +30,10 @@
     # The agent replaces its own binary from GitHub Releases, which cannot
     # work from the read-only Nix store. Updates come from Nix instead.
     ./disable-self-update.patch
+    # Accept an xss-lock or xautolock process run by the console user, on any
+    # desktop; upstream only finds them in the i3 config, so it misses eg.
+    # Home Manager's `services.screen-locker` systemd user services.
+    ./screen-lock-running-process.patch
   ];
 
   subPackages = [

@@ -1,0 +1,263 @@
+diff --git a/pkg/deviceagent/checks/checks_linux.go b/pkg/deviceagent/checks/checks_linux.go
+index 8cde024..f074119 100644
+--- a/pkg/deviceagent/checks/checks_linux.go
++++ b/pkg/deviceagent/checks/checks_linux.go
+@@ -23,9 +23,11 @@ package checks
+ import (
+ 	"context"
+ 	"os"
++	"os/user"
+ 	"path/filepath"
+ 	"strconv"
+ 	"strings"
++	"syscall"
+ )
+ 
+ func init() {
+@@ -138,23 +140,51 @@ var linuxGsettingsLockSchemas = []struct {
+ }
+ 
+ func linuxScreenLockProbes(desktop string) []func(context.Context, string) (Result, bool) {
++	process := linuxScreenLockProcess
+ 	gsettings := linuxScreenLockGsettings
+ 	kde := linuxScreenLockKDE
+ 	xfce := linuxScreenLockXFCE
+ 	i3 := linuxScreenLockI3
+ 
++	// A running idle locker is direct evidence whatever the desktop, so it
++	// goes first; when there is none, it is skipped.
+ 	switch {
+ 	case linuxDesktopPrefersKDE(desktop):
+-		return []func(context.Context, string) (Result, bool){kde, i3, gsettings, xfce}
++		return []func(context.Context, string) (Result, bool){process, kde, i3, gsettings, xfce}
+ 	case linuxDesktopPrefersXFCE(desktop):
+-		return []func(context.Context, string) (Result, bool){xfce, i3, gsettings, kde}
++		return []func(context.Context, string) (Result, bool){process, xfce, i3, gsettings, kde}
+ 	case linuxDesktopPrefersI3(desktop):
+-		return []func(context.Context, string) (Result, bool){i3, gsettings, kde, xfce}
++		return []func(context.Context, string) (Result, bool){process, i3, gsettings, kde, xfce}
+ 	default:
+-		return []func(context.Context, string) (Result, bool){gsettings, i3, kde, xfce}
++		return []func(context.Context, string) (Result, bool){process, gsettings, i3, kde, xfce}
+ 	}
+ }
+ 
++// linuxScreenLockProcess passes when the console user runs an idle screen
++// locker (xss-lock or xautolock), however it was started: from the window
++// manager's config, a systemd user service, an autostart entry, etc.
++func linuxScreenLockProcess(_ context.Context, user string) (Result, bool) {
++	idleMinutes, locker, mechanism, ok := linuxRunningIdleLock(linuxUserUID(user))
++	if !ok {
++		return Result{}, false
++	}
++
++	ev := map[string]any{
++		"backend":   "process",
++		"mechanism": mechanism,
++		"locker":    locker,
++	}
++	if user != "" {
++		ev["console_user"] = user
++	}
++
++	if idleMinutes >= 0 {
++		ev["idle_minutes"] = idleMinutes
++	}
++
++	return pass(ev), true
++}
++
+ func linuxScreenLockGsettings(ctx context.Context, user string) (Result, bool) {
+ 	if !CommandExists("gsettings") {
+ 		return Result{}, false
+@@ -337,6 +367,87 @@ func linuxScreenLockI3(ctx context.Context, user string) (Result, bool) {
+ 	return pass(ev), true
+ }
+ 
++// linuxUserUID returns the UID of user, or -1 if it cannot be found.
++func linuxUserUID(name string) int {
++	if name == "" {
++		return -1
++	}
++
++	u, err := user.Lookup(name)
++	if err != nil {
++		return -1
++	}
++
++	uid, err := strconv.Atoi(u.Uid)
++	if err != nil {
++		return -1
++	}
++
++	return uid
++}
++
++// linuxRunningIdleLock looks for an idle screen lock running as uid, for
++// any desktop and however it was started.
++func linuxRunningIdleLock(uid int) (idleMinutes int, locker, mechanism string, ok bool) {
++	return linuxRunningIdleLockIn("/proc", uid)
++}
++
++// linuxRunningIdleLockIn scans the processes under procRoot owned by uid and
++// accepts the same xautolock and xss-lock invocations as the i3 config check.
++func linuxRunningIdleLockIn(procRoot string, uid int) (idleMinutes int, locker, mechanism string, ok bool) {
++	idleMinutes = -1
++
++	if uid < 0 {
++		return idleMinutes, "", "", false
++	}
++
++	entries, err := os.ReadDir(procRoot)
++	if err != nil {
++		return idleMinutes, "", "", false
++	}
++
++	for _, entry := range entries {
++		if _, err := strconv.Atoi(entry.Name()); err != nil {
++			continue
++		}
++
++		dir := filepath.Join(procRoot, entry.Name())
++
++		info, err := os.Stat(dir)
++		if err != nil {
++			continue
++		}
++
++		stat, isStat := info.Sys().(*syscall.Stat_t)
++		if !isStat || int(stat.Uid) != uid {
++			continue
++		}
++
++		cmdline, err := os.ReadFile(filepath.Join(dir, "cmdline"))
++		if err != nil || len(cmdline) == 0 {
++			continue
++		}
++
++		args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
++		if len(args) == 0 {
++			continue
++		}
++
++		switch filepath.Base(args[0]) {
++		case "xautolock":
++			if minutes, lockCmd, found := parseXautolockIdleLock(strings.Join(args, " ")); found {
++				return minutes, lockCmd, "xautolock", true
++			}
++		case "xss-lock":
++			if lockCmd, found := parseXssLockIdleLock(strings.Join(args, " ")); found {
++				return -1, lockCmd, "xss-lock", true
++			}
++		}
++	}
++
++	return idleMinutes, "", "", false
++}
++
+ func linuxI3ConfigPath(ctx context.Context, user string) string {
+ 	home := linuxUserHome(ctx, user)
+ 	if home == "" {
+diff --git a/pkg/deviceagent/checks/checks_linux_screenlock_test.go b/pkg/deviceagent/checks/checks_linux_screenlock_test.go
+index 6766d26..76d5660 100644
+--- a/pkg/deviceagent/checks/checks_linux_screenlock_test.go
++++ b/pkg/deviceagent/checks/checks_linux_screenlock_test.go
+@@ -23,6 +23,9 @@
+ package checks
+ 
+ import (
++	"os"
++	"path/filepath"
++	"strings"
+ 	"testing"
+ 
+ 	"github.com/stretchr/testify/require"
+@@ -139,14 +142,84 @@ func TestLinuxScreenLockProbesOrder(t *testing.T) {
+ 	t.Parallel()
+ 
+ 	kdeFirst := linuxScreenLockProbes("KDE")
+-	require.Len(t, kdeFirst, 4)
++	require.Len(t, kdeFirst, 5)
+ 
+ 	xfceFirst := linuxScreenLockProbes("xfce")
+-	require.Len(t, xfceFirst, 4)
++	require.Len(t, xfceFirst, 5)
+ 
+ 	i3First := linuxScreenLockProbes("i3")
+-	require.Len(t, i3First, 4)
++	require.Len(t, i3First, 5)
+ 
+ 	defaultFirst := linuxScreenLockProbes("ubuntu")
+-	require.Len(t, defaultFirst, 4)
++	require.Len(t, defaultFirst, 5)
++}
++
++func TestLinuxRunningIdleLockIn(t *testing.T) {
++	t.Parallel()
++
++	writeProc := func(t *testing.T, root, pid string, args ...string) {
++		t.Helper()
++
++		dir := filepath.Join(root, pid)
++		require.NoError(t, os.MkdirAll(dir, 0o755))
++		require.NoError(t, os.WriteFile(
++			filepath.Join(dir, "cmdline"),
++			[]byte(strings.Join(args, "\x00")+"\x00"),
++			0o644,
++		))
++	}
++
++	uid := os.Getuid()
++
++	t.Run("xss-lock from a systemd user service", func(t *testing.T) {
++		t.Parallel()
++
++		root := t.TempDir()
++		writeProc(t, root, "12", "/nix/store/abc-bash/bin/bash")
++		writeProc(t, root, "34",
++			"/nix/store/abc-xss-lock/bin/xss-lock", "-s", "2", "--transfer-sleep-lock",
++			"--", "/nix/store/abc-i3lock/bin/i3lock", "--nofork",
++		)
++		require.NoError(t, os.MkdirAll(filepath.Join(root, "self"), 0o755))
++
++		_, locker, mechanism, ok := linuxRunningIdleLockIn(root, uid)
++		require.True(t, ok)
++		require.Equal(t, "xss-lock", mechanism)
++		require.Contains(t, locker, "i3lock")
++	})
++
++	t.Run("xautolock locking through loginctl", func(t *testing.T) {
++		t.Parallel()
++
++		root := t.TempDir()
++		writeProc(t, root, "56",
++			"/nix/store/abc-xautolock/bin/xautolock", "-time", "10",
++			"-locker", "/nix/store/abc-systemd/bin/loginctl lock-session 2",
++		)
++
++		idleMinutes, _, mechanism, ok := linuxRunningIdleLockIn(root, uid)
++		require.True(t, ok)
++		require.Equal(t, "xautolock", mechanism)
++		require.Equal(t, 10, idleMinutes)
++	})
++
++	t.Run("xss-lock without a locker", func(t *testing.T) {
++		t.Parallel()
++
++		root := t.TempDir()
++		writeProc(t, root, "78", "xss-lock", "--", "notify-send", "hello")
++
++		_, _, _, ok := linuxRunningIdleLockIn(root, uid)
++		require.False(t, ok)
++	})
++
++	t.Run("process of another user", func(t *testing.T) {
++		t.Parallel()
++
++		root := t.TempDir()
++		writeProc(t, root, "90", "xss-lock", "--", "i3lock")
++
++		_, _, _, ok := linuxRunningIdleLockIn(root, uid+1)
++		require.False(t, ok)
++	})
+ }
